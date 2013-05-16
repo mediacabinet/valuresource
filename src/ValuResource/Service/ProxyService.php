@@ -10,57 +10,128 @@ use ValuSo\Feature\ServiceBrokerTrait;
 use ValuSo\Feature\OptionsTrait;
 
 class ProxyService
-    implements Feature\ServiceBrokerAwareInterface,
-               Feature\ConfigurableInterface
+    implements ResourceServiceInterface,
+               Feature\ServiceBrokerAwareInterface
 {
     use ServiceBrokerTrait;
-    use OptionsTrait;
     
-    protected $optionsClass = 'ValuResource\Service\ProxyServiceOptions';
+    /**
+     * Name of the service, where the operations are
+     * proxied to by default
+     * 
+     * @var string
+     */
+    protected $defaultService;
+    
+    /**
+     * Resource spec map
+     * 
+     * @var array
+     */
+    protected $specMap = array();
+    
+    /**
+     * Command
+     * 
+     * @var CommandInterface
+     */
+    protected $command;
+    
+    /**
+     * Array of supported namespaces
+     */
+    protected $namespaces = array();
     
     public function __invoke(CommandInterface $command)
     {
+        $this->command = $command;
+        
         $ns = $command->getParam('ns', 0);
         $this->assertNamespace($ns);
         
         switch ($command->getOperation()) {
+            case 'getNamespaces':
+                return $this->namespaces;
+                break;
             case 'exists':
             case 'remove':
-                return $this->proxy(
-                    $command, 
-                    $ns,
-                    ['resourceId']);
+                return call_user_func_array(
+                    [$this, $command->getOperation()], 
+                    $this->resolveArgs($command, ['ns', 'resourceId']));
                 break;
             case 'findBy':
             case 'findManyBy':
-                return $this->proxy(
-                    $command,
-                    $ns,
-                    ['property', 'value', 'specs']);
+                return call_user_func_array(
+                    [$this, $command->getOperation()],
+                    $this->resolveArgs($command, ['ns', 'property', 'value', 'specs']));
                 break;
             case 'create':
-                return $this->proxy(
-                    $command,
-                    $ns,
-                    ['specs']);
+                return call_user_func_array(
+                    [$this, $command->getOperation()],
+                    $this->resolveArgs($command, ['ns', 'specs']));
                     break;
             case 'update':
-                return $this->proxy(
-                    $command,
-                    $ns,
-                    ['resourceId', 'specs']);
+                return call_user_func_array(
+                    [$this, $command->getOperation()],
+                    $this->resolveArgs($command, ['ns', 'resourceId', 'specs']));
                 break;
         }
     }
     
     /**
-     * Proxy command
-     * 
-     * @param CommandInterface $command
-     * @param string $ns
-     * @param array $args
+     * @see \ValuResource\Service\ResourceServiceInterface::create()
      */
-    protected function proxy(CommandInterface $command, $ns, $args)
+    public function create($ns, $specs)
+    {
+        throw $this->newUnsupportedOperationException($ns);
+    }
+
+	/**
+     * @see \ValuResource\Service\ResourceServiceInterface::exists()
+     */
+    public function exists($ns, $resourceId)
+    {
+        throw $this->newUnsupportedOperationException($ns);
+    }
+
+	/**
+     * @see \ValuResource\Service\ResourceServiceInterface::findBy()
+     */
+    public function findBy($ns, $property, $value, $specs = null)
+    {
+        throw $this->newUnsupportedOperationException($ns);
+    }
+
+	/**
+     * @see \ValuResource\Service\ResourceServiceInterface::findManyBy()
+     */
+    public function findManyBy($ns, $property, $value, $specs = null)
+    {
+        throw $this->newUnsupportedOperationException($ns);
+    }
+
+	/**
+     * @see \ValuResource\Service\ResourceServiceInterface::remove()
+     */
+    public function remove($ns, $resourceId)
+    {
+        throw $this->newUnsupportedOperationException($ns);
+    }
+
+	/**
+     * @see \ValuResource\Service\ResourceServiceInterface::update()
+     */
+    public function update($ns, $resourceId, $specs)
+    {
+        throw $this->newUnsupportedOperationException($ns);
+    }
+
+    /**
+     * Resolve argument list from command
+     * 
+     * @return array
+     */
+	protected function resolveArgs(CommandInterface $command, $args)
     {
         $arguments = [];
         foreach ($args as $key => $arg) {
@@ -71,61 +142,75 @@ class ProxyService
             }
         }
         
-        $this->mapArguments($arguments, $ns);
-        
-        if (!$this->mapCommand($command, $ns)) {
-            throw new UnsupportedOperationException(
-                "Resource service for namespace %NS% doesn't support operation %OPERATION%",
-                array('NS' => $ns, 'OPERATION' => $command->getOperation()));
-        }
-        
-        return $this->getServiceBroker()->dispatch($command)->first();
+        return $arguments;
     }
     
-    protected function mapArguments(&$arguments, $ns)
+    /**
+     * Proxy command
+     * 
+     * @param array $params
+     * @param string $operation
+     * @param string $service
+     */
+    protected function proxy($params = null, $operation = null, $service = null)
     {
-        if (array_key_exists('property', $arguments)) {
-            $arguments['property'] = $this->mapSpec($arguments['property']);
-        } elseif (array_key_exists('specs', $arguments)) {
-            if (is_string($arguments['specs'])) {
-                $arguments['specs'] = $this->mapSpec($arguments['property']);
-            } elseif (is_array($arguments['specs'])) {
-                foreach ($arguments['specs'] as $key => $value) {
-                    $arguments['specs'][$key] = $this->mapSpec($value);
-                }
+        if ($service === null) {
+            
+            if (!$this->defaultService) {
+                throw new \RuntimeException('Proxy service is not defined');
             }
-        } elseif (array_key_exists('resourceId', $arguments)) {
-            $arguments[$this->mapSpec('resourceId')] = $arguments['resourceId'];
+            
+            $service = $this->defaultService;
+        }
+        
+        $this->command->setService($service);
+        
+        if ($operation !== null) {
+            $this->command->setOperation($operation);
+        }
+        
+        if ($params !== null) {
+            $this->command->setParams($params);
+        }
+        
+        return $this->getServiceBroker()->dispatch($this->command)->first();
+    }
+    
+    /**
+     * Map spec array
+     * 
+     * @param array $specs
+     */
+    protected function mapSpecs(&$specs)
+    {
+        if ($specs === null) {
+            return;
+        }
+        
+        if (is_array($specs)) {
+            foreach ($specs as $key => $value) {
+                $mapped = $this->mapSpec($key);
+                
+                if ($mapped !== false) {
+                    $specs[$this->mapSpec($key)] = $value;
+                }
+                
+                unset($specs[$key]);
+            }
         }
     }
     
     /**
-     * Maps command for proxying
+     * Map spec
      * 
-     * @param CommandInterface $command
-     * @param string $ns
+     * @return string|boolean New spec name, or false if spec is not supported
      */
-    protected function mapCommand(CommandInterface $command, $ns)
+    protected function mapSpec($spec)
     {
-        $map    = $this->getOption('map');
-        $nsKey  = $ns.'::'.$command->getOperation();
-        $key    = $command->getOperation();
-        
-        if (array_key_exists($nsKey, $map)) {
-            $mapped = $map[$nsKey];
-        } elseif (array_key_exists($key, $map)) {
-            $mapped = $map[$key];
-        }
-        
-        if (!$mapped) {
-            return false;
+        if (array_key_exists($spec, $this->specMap)) {
+            return $this->specMap[$spec];
         } else {
-            list($service, $operation) = explode('.', $mapped);
-
-            $command->setService($service);
-            $command->setOperation($operation);
-            
-            return true;
+            return $spec;
         }
     }
     
@@ -145,5 +230,15 @@ class ProxyService
             throw new UnsupportedNamespaceException(
                 'Namespace %NS% is not supported', ['NS' => $ns]);
         }
+    }
+    
+    /**
+     * Create new exception
+     */
+    private function newUnsupportedOperationException($ns)
+    {
+        return new UnsupportedOperationException(
+            "Resource service for namespace %NS% doesn't support operation %OPERATION%",
+            array('NS' => $ns, 'OPERATION' => $this->command->getOperation()));
     }
 }

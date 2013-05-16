@@ -1,0 +1,6 @@
+.buildpath
+.project
+.settings/
+data/
+.DS_Store
+composer.lock
