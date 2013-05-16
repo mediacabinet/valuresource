@@ -61,9 +61,21 @@ class ProxyService
                 break;
             case 'findBy':
             case 'findManyBy':
-                return call_user_func_array(
+                $args = $this->resolveArgs($command, ['ns', 'property', 'value', 'specs']);
+                
+                $response = call_user_func_array(
                     [$this, $command->getOperation()],
-                    $this->resolveArgs($command, ['ns', 'property', 'value', 'specs']));
+                    $args);
+                
+                if ($command->getOperation() === 'findMany') {
+                    foreach ($response as $key => &$value) {
+                        $this->mapResponse($value, $args['specs']);
+                    }
+                } else {
+                    $this->mapResponse($response, $args['specs']);
+                }
+                
+                return $response;
                 break;
             case 'create':
                 return call_user_func_array(
@@ -137,8 +149,16 @@ class ProxyService
         foreach ($args as $key => $arg) {
             if ($command->hasParam($arg)) {
                 $arguments[$arg] = $command->getParam($arg);
-            } elseif ($command->hasParam($key+1)) {
-                $arguments[$arg] = $command->getParam($key+1);
+            } elseif ($command->hasParam($key)) {
+                $arguments[$arg] = $command->getParam($key);
+            }
+            
+            if ($arg === 'property') {
+                // Map property name
+                $arguments[$arg] = $this->mapProperty($arguments[$arg]);
+            } elseif ($arg === 'specs') {
+                // Map specs array
+                $arguments[$arg] = $this->mapSpecs($arguments[$arg]);
             }
         }
         
@@ -181,21 +201,59 @@ class ProxyService
      * 
      * @param array $specs
      */
-    protected function mapSpecs(&$specs)
+    protected function mapSpecs($specs)
     {
         if ($specs === null) {
-            return;
+            return null;
         }
         
         if (is_array($specs)) {
             foreach ($specs as $key => $value) {
-                $mapped = $this->mapSpec($key);
+                $mapped = $this->mapProperty($key);
                 
                 if ($mapped !== false) {
-                    $specs[$this->mapSpec($key)] = $value;
+                    $specs[$mapped] = $value;
                 }
                 
-                unset($specs[$key]);
+                if ($mapped !== $key) {
+                    unset($specs[$key]);
+                }
+            }
+            
+            return $specs;
+        } elseif (is_string($specs)) {
+            return $this->mapProperty($specs);
+        }
+    }
+    
+    /**
+     * Map keys in response array according to target
+     * specs
+     * 
+     * @return array
+     */
+    protected function mapResponse(&$response, $targetSpecs)
+    {
+        if (!is_array($response)) {
+            return;
+        } elseif (!is_array($targetSpecs)) {
+            return;
+        } else {
+            foreach ($targetSpecs as $key => $value) {
+                
+                if (!array_key_exists($key, $response)) {
+                    continue;
+                }
+                
+                $resourceSpec = array_search($key, $this->specMap);
+                
+                if ($resourceSpec !== false) {
+                    $response[$resourceSpec] = $response[$key];
+                    
+                    if ($resourceSpec !== $key) {
+                        unset($response[$key]);
+                    }
+                }
             }
         }
     }
@@ -205,12 +263,12 @@ class ProxyService
      * 
      * @return string|boolean New spec name, or false if spec is not supported
      */
-    protected function mapSpec($spec)
+    protected function mapProperty($property)
     {
-        if (array_key_exists($spec, $this->specMap)) {
-            return $this->specMap[$spec];
+        if (array_key_exists($property, $this->specMap)) {
+            return $this->specMap[$property];
         } else {
-            return $spec;
+            return $property;
         }
     }
     
@@ -225,8 +283,7 @@ class ProxyService
             return;
         }
         
-        $namespaces = $this->getOption('namespaces');
-        if (!in_array($ns, $namespaces)) {
+        if (!in_array($ns, $this->namespaces)) {
             throw new UnsupportedNamespaceException(
                 'Namespace %NS% is not supported', ['NS' => $ns]);
         }
