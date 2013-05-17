@@ -16,6 +16,13 @@ class ProxyService
     use ServiceBrokerTrait;
     
     /**
+     * Array of supported namespaces
+     *
+     * @var array
+     */
+    protected $namespaces = array();
+    
+    /**
      * Name of the service, where the operations are
      * proxied to by default
      * 
@@ -31,31 +38,35 @@ class ProxyService
     protected $specMap = array();
     
     /**
-     * Command
+     * Stack of commands
      * 
-     * @var CommandInterface
+     * @var array
      */
-    protected $command;
+    private $commandStack = array();
     
     /**
-     * Array of supported namespaces
+     * Invoke command
+     * 
+     * @var CommandInterface $command
      */
-    protected $namespaces = array();
-    
     public function __invoke(CommandInterface $command)
     {
-        $this->command = $command;
+        $ns = $command->getParam('ns', $command->getParam(0, '*'));
+        $command->setParam('ns', $ns);
         
-        $ns = $command->getParam('ns', 0);
+        // Push to command stack
+        $this->commandStack[] = $command;
+        
         $this->assertNamespace($ns);
         
+        // Proxy operation to local method
         switch ($command->getOperation()) {
             case 'getNamespaces':
-                return $this->namespaces;
+                $response = $this->namespaces;
                 break;
             case 'exists':
             case 'remove':
-                return call_user_func_array(
+                $response = call_user_func_array(
                     [$this, $command->getOperation()], 
                     $this->resolveArgs($command, ['ns', 'resourceId']));
                 break;
@@ -67,6 +78,7 @@ class ProxyService
                     [$this, $command->getOperation()],
                     $args);
                 
+                // Map response parameters
                 if ($command->getOperation() === 'findMany') {
                     foreach ($response as $key => &$value) {
                         $this->mapResponse($value, $args['specs']);
@@ -75,19 +87,23 @@ class ProxyService
                     $this->mapResponse($response, $args['specs']);
                 }
                 
-                return $response;
                 break;
             case 'create':
-                return call_user_func_array(
+                $response = call_user_func_array(
                     [$this, $command->getOperation()],
                     $this->resolveArgs($command, ['ns', 'specs']));
                     break;
             case 'update':
-                return call_user_func_array(
+                $response = call_user_func_array(
                     [$this, $command->getOperation()],
                     $this->resolveArgs($command, ['ns', 'resourceId', 'specs']));
                 break;
         }
+        
+        // Pop from command stack
+        array_pop($this->commandStack);
+        
+        return $response;
     }
     
     /**
@@ -155,7 +171,7 @@ class ProxyService
             
             if ($arg === 'property') {
                 // Map property name
-                $arguments[$arg] = $this->mapProperty($arguments[$arg]);
+                $arguments[$arg] = $this->mapToTargetProperty($arguments[$arg]);
             } elseif ($arg === 'specs') {
                 // Map specs array
                 $arguments[$arg] = $this->mapSpecs($arguments[$arg]);
@@ -168,6 +184,7 @@ class ProxyService
     /**
      * Proxy command
      * 
+     * @param CommandInterface $command
      * @param array $params
      * @param string $operation
      * @param string $service
@@ -176,24 +193,45 @@ class ProxyService
     {
         if ($service === null) {
             
-            if (!$this->defaultService) {
+            if (!$this->getServiceName()) {
                 throw new \RuntimeException('Proxy service is not defined');
             }
             
-            $service = $this->defaultService;
+            $service = $this->getServiceName();
         }
         
-        $this->command->setService($service);
+        $command = $this->getCommand();
+        $command->setService($service);
         
         if ($operation !== null) {
-            $this->command->setOperation($operation);
+            $command->setOperation($operation);
         }
         
         if ($params !== null) {
-            $this->command->setParams($params);
+            $command->setParams($params);
         }
         
-        return $this->getServiceBroker()->dispatch($this->command)->first();
+        return $this->getServiceBroker()->dispatch($command)->first();
+    }
+    
+    /**
+     * Retrieve service name
+     * 
+     * @return string
+     */
+    protected function getServiceName()
+    {
+        return $this->defaultService;
+    }
+    
+    /**
+     * Retrieve spec map
+     * 
+     * @return array
+     */
+    protected function getSpecMap()
+    {
+        return $this->specMap;
     }
     
     /**
@@ -209,7 +247,7 @@ class ProxyService
         
         if (is_array($specs)) {
             foreach ($specs as $key => $value) {
-                $mapped = $this->mapProperty($key);
+                $mapped = $this->mapToTargetProperty($key);
                 
                 if ($mapped !== false) {
                     $specs[$mapped] = $value;
@@ -222,7 +260,7 @@ class ProxyService
             
             return $specs;
         } elseif (is_string($specs)) {
-            return $this->mapProperty($specs);
+            return $this->mapToTargetProperty($specs);
         }
     }
     
@@ -245,7 +283,7 @@ class ProxyService
                     continue;
                 }
                 
-                $resourceSpec = array_search($key, $this->specMap);
+                $resourceSpec = $this->mapToResourceProperty($key);
                 
                 if ($resourceSpec !== false) {
                     $response[$resourceSpec] = $response[$key];
@@ -259,22 +297,34 @@ class ProxyService
     }
     
     /**
-     * Map spec
+     * Map property
      * 
      * @return string|boolean New spec name, or false if spec is not supported
      */
-    protected function mapProperty($property)
+    protected function mapToTargetProperty($resourceProperty)
     {
-        if (array_key_exists($property, $this->specMap)) {
-            return $this->specMap[$property];
+        $map = $this->getSpecMap();
+        
+        if (array_key_exists($resourceProperty, $map)) {
+            return $map[$resourceProperty];
         } else {
-            return $property;
+            return $resourceProperty;
         }
+    }
+    
+    /**
+     * Map target property to resource property
+     */
+    protected function mapToResourceProperty($targetProperty)
+    {
+        $map = $this->getSpecMap();
+        return array_search($targetProperty, $map);
     }
     
     /**
      * Assert that namespace is supported
      * 
+     * @param string $ns
      * @throws UnsupportedNamespaceException
      */
     protected function assertNamespace($ns)
@@ -287,6 +337,16 @@ class ProxyService
             throw new UnsupportedNamespaceException(
                 'Namespace %NS% is not supported', ['NS' => $ns]);
         }
+    }
+    
+    /**
+     * Retrieve current (latest) command from the command stack
+     * 
+     * @return CommandInterface
+     */
+    protected function getCommand()
+    {
+        return $this->commandStack[sizeof($this->commandStack)-1];
     }
     
     /**
