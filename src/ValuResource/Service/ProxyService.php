@@ -2,13 +2,21 @@
 namespace ValuResource\Service;
 
 use ValuResource\Service\Exception\UnsupportedNamespaceException;
-
 use ValuSo\Exception\UnsupportedOperationException;
 use ValuSo\Command\CommandInterface;
 use ValuSo\Feature;
 use ValuSo\Feature\ServiceBrokerTrait;
 use ValuSo\Feature\OptionsTrait;
 
+/**
+ * Proxy service
+ * 
+ * This class is a base service class for resource services that
+ * act as proxies to real services. Any class extending this base
+ * class should implement one or more of the operations introduced
+ * in ResourceServiceInterface.
+ *
+ */
 class ProxyService
     implements ResourceServiceInterface,
                Feature\ServiceBrokerAwareInterface
