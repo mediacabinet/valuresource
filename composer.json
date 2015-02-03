@@ -12,15 +12,17 @@
 	],
 	"require" : {
 		"php" : ">=5.4.0"
-	},
-	"require-dev" : {
-		"valu/valuso" : "dev-master",
-		"zendframework/zendframework" : ">=2.0"
+		"valu/valuso" : "1.*",
+		"zendframework/zendframework" : "2.*"
 	},
 	"autoload" : {
 		"psr-0" : {
-			"ValuResourceTest\\" : "tests/",
 			"ValuResource\\" : "src/"
 		}
-	}
+	},
+	"autoload-dev" : {
+        "psr-0" : {
+            "ValuResourceTest\\" : "tests/"
+        }
+    }
 }
