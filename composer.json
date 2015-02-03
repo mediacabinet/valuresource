@@ -1,7 +1,6 @@
 {
 	"name" : "valu/valuresource",
 	"description" : "ValuResource module",
-	"version" : "0.1.0",
 	"type" : "library",
 	"keywords" : [
 		"valu"
@@ -11,7 +10,7 @@
 		"BSD-3-Clause"
 	],
 	"require" : {
-		"php" : ">=5.4.0"
+		"php" : ">=5.4.0",
 		"valu/valuso" : "1.*",
 		"zendframework/zendframework" : "2.*"
 	},
@@ -21,8 +20,8 @@
 		}
 	},
 	"autoload-dev" : {
-        "psr-0" : {
-            "ValuResourceTest\\" : "tests/"
+                "psr-0" : {
+                        "ValuResourceTest\\" : "tests/"
+                }
         }
-    }
 }
