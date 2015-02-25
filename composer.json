@@ -1,27 +1,27 @@
 {
-	"name" : "valu/valuresource",
-	"description" : "ValuResource module",
-	"type" : "library",
-	"keywords" : [
-		"valu"
-	],
-	"homepage" : "http://www.mediacabinet.fi/",
-	"license" : [
-		"BSD-3-Clause"
-	],
-	"require" : {
-		"php" : ">=5.4.0",
-		"valu/valuso" : "1.*",
-		"zendframework/zendframework" : "2.*"
-	},
-	"autoload" : {
-		"psr-0" : {
-			"ValuResource\\" : "src/"
-		}
-	},
-	"autoload-dev" : {
-                "psr-0" : {
-                        "ValuResourceTest\\" : "tests/"
-                }
+    "name" : "valu/valuresource",
+    "description" : "ValuResource module",
+    "type" : "library",
+    "keywords" : [
+        "valu"
+    ],
+    "homepage" : "http://www.mediacabinet.fi/",
+    "license" : [
+        "BSD-3-Clause"
+    ],
+    "require" : {
+        "php" : ">=5.4.0",
+        "valu/valuso" : "1.*",
+        "zendframework/zendframework" : "2.*"
+    },
+    "autoload" : {
+        "psr-0" : {
+            "ValuResource\\" : "src/"
         }
+    },
+    "autoload-dev" : {
+        "psr-0" : {
+            "ValuResourceTest\\" : "tests/"
+        }
+    }
 }
