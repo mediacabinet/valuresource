@@ -11,9 +11,15 @@
     ],
     "require" : {
         "php" : ">=5.4.0",
-        "valu/valuso" : "1.*",
+        "valu/valuso" : "dev-master",
         "zendframework/zendframework" : "2.*"
     },
+    "repositories" : [
+        {
+            "type": "vcs",
+            "url":  "https://github.com/valu-digital/valuso.git"
+        }
+    ],
     "autoload" : {
         "psr-0" : {
             "ValuResource\\" : "src/"
